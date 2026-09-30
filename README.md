@@ -132,6 +132,34 @@ allowed. Direct IPv6 addresses use `[2001:db8::1]:9876`.
 
 ## Agent deployment with systemd
 
+### Debian packages
+
+The `Debian packages` GitHub Actions workflow builds native Debian 12 packages
+for `amd64` (x86-64) and `arm64`. Run it manually from the Actions tab, or push
+a version tag matching `lib/speedtest/version.rb`, for example:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Manual runs publish downloadable workflow artifacts. Tag runs additionally
+create or update the GitHub release with both `.deb` files and `SHA256SUMS`.
+Install the package matching the server architecture:
+
+```sh
+sudo apt install ./spinel-speedtest_0.1.0_arm64.deb
+# or: sudo apt install ./spinel-speedtest_0.1.0_amd64.deb
+sudo systemctl enable --now speedtest-agent
+```
+
+The package deliberately does not enable or start the unauthenticated agent
+automatically. It installs both executables under `/usr/bin`, creates the
+unprivileged `speedtest` system user, and installs the service under
+`/usr/lib/systemd/system`.
+
+### Manual installation
+
 Build the agent on the target Linux architecture, create an unprivileged user,
 and install the provided service:
 
@@ -249,4 +277,3 @@ The smoke script starts the **compiled** agent, runs the **compiled** CLI with
 two streams, checks every measurement, then performs another complete test
 against the same agent to verify repeated-test handling. It binds localhost
 port 19876 by default; override with `SPEEDTEST_SMOKE_PORT`.
-

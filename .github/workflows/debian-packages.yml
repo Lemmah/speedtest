@@ -1,0 +1,128 @@
+name: Debian packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  SPINEL_VERSION: "2026.09.12"
+
+jobs:
+  package:
+    name: Debian ${{ matrix.architecture }}
+    runs-on: ${{ matrix.runner }}
+    container: debian:12-slim
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-22.04
+          - architecture: arm64
+            runner: ubuntu-22.04-arm
+
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            build-essential ca-certificates curl dpkg-dev file git ruby
+
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Read package version
+        id: version
+        shell: bash
+        run: |
+          version="$(sed -n 's/^[[:space:]]*VERSION = "\([^"]*\)"/\1/p' lib/speedtest/version.rb)"
+          test -n "$version"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" != "v${version}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match project version v${version}" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Build pinned Spinel
+        shell: bash
+        run: |
+          git clone --depth 1 --branch "$SPINEL_VERSION" \
+            https://github.com/matz/spinel.git "$RUNNER_TEMP/spinel"
+          make -C "$RUNNER_TEMP/spinel" deps
+          make -C "$RUNNER_TEMP/spinel" -j"$(nproc)"
+          "$RUNNER_TEMP/spinel/bin/spinel" --version
+
+      - name: Test and compile native executables
+        shell: bash
+        run: |
+          make test
+          make SPINEL="$RUNNER_TEMP/spinel/bin/spinel"
+          file build/speedtest build/speedtest-agent
+          test "$(dpkg --print-architecture)" = "${{ matrix.architecture }}"
+          SPEEDTEST_SMOKE_PORT=19876 make smoke SPINEL="$RUNNER_TEMP/spinel/bin/spinel"
+
+      - name: Build Debian package
+        env:
+          PACKAGE_HOMEPAGE: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          packaging/build-deb.sh \
+            "${{ matrix.architecture }}" \
+            "${{ steps.version.outputs.version }}" \
+            dist
+
+      - name: Inspect package
+        shell: bash
+        run: |
+          package="$(find dist -maxdepth 1 -name '*.deb' -print -quit)"
+          test -n "$package"
+          test "$(dpkg-deb --field "$package" Architecture)" = "${{ matrix.architecture }}"
+          test "$(dpkg-deb --field "$package" Version)" = "${{ steps.version.outputs.version }}"
+          dpkg-deb --info "$package"
+          dpkg-deb --contents "$package"
+          root="$(mktemp -d)"
+          dpkg-deb --extract "$package" "$root"
+          "$root/usr/bin/speedtest" --version
+          "$root/usr/bin/speedtest-agent" --version
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spinel-speedtest-${{ steps.version.outputs.version }}-${{ matrix.architecture }}
+          path: dist/*.deb
+          if-no-files-found: error
+
+  release:
+    name: Publish release packages
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: spinel-speedtest-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum *.deb > SHA256SUMS
+
+      - name: Create release and upload packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" dist/*.deb dist/SHA256SUMS --clobber
+
