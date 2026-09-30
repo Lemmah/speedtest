@@ -8,4 +8,3 @@ module Speedtest
   class ConfigError < Error
   end
 end
-

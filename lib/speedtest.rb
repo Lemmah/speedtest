@@ -9,4 +9,3 @@ require_relative "speedtest/client"
 require_relative "speedtest/agent"
 require_relative "speedtest/cli"
 require_relative "speedtest/agent_cli"
-

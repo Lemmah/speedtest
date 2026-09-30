@@ -51,4 +51,3 @@ module Speedtest
     end
   end
 end
-
