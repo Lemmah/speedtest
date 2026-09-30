@@ -1,0 +1,5 @@
+# NAME HOST PORT
+home 192.168.1.20 9876
+fra1 fra1.example.com 9876
+lon1 lon1.example.com 9876
+

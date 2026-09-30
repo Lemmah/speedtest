@@ -1,0 +1,12 @@
+require_relative "speedtest/version"
+require_relative "speedtest/errors"
+require_relative "speedtest/clock"
+require_relative "speedtest/statistics"
+require_relative "speedtest/protocol"
+require_relative "speedtest/config"
+require_relative "speedtest/result"
+require_relative "speedtest/client"
+require_relative "speedtest/agent"
+require_relative "speedtest/cli"
+require_relative "speedtest/agent_cli"
+
